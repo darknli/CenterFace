@@ -73,12 +73,12 @@ class CropResize:
         ground_truth = np.concatenate([bboxes, conf], -1)
         mask = abandon_min_face(bboxes, 25)
 
-        # image = image[..., (2, 1, 0)]
-        # image = np.ascontiguousarray(image)
+        # tmp_image = image[..., (2, 1, 0)].copy()
+        # tmp_image = np.ascontiguousarray(tmp_image)
         # for box in (bboxes[mask] * 4).astype(int):
-        #     cv2.rectangle(image, (box[0], box[1]), (box[2], box[3]), (0, 255, 0), 1)
-        # cv2.imshow("r", image)
-        # print(bboxes, mask, image.shape)
+        #     cv2.rectangle(tmp_image, (box[0], box[1]), (box[2], box[3]), (0, 255, 0), 1)
+        # cv2.imshow("r", tmp_image)
+        # print(bboxes, mask, tmp_image.shape)
         # cv2.waitKey()
 
 

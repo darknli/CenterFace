@@ -2,26 +2,28 @@ import numpy as np
 
 
 def boxes2hm(boxes, size, num_classes):
-    hm = np.zeros((size, size, num_classes))
-    wh = np.zeros((size, size, 2))
-    offset = np.zeros((size, size, 2))
-    mask = np.zeros((size, size, num_classes))
+    hm = np.zeros((size[0], size[1], num_classes))
+    hw = np.zeros((size[0], size[1], 2))
+    offset = np.zeros((size[0], size[1], 2))
+    mask = np.zeros((size[0], size[1], num_classes), dtype=bool)
 
     for box in boxes:
-        box, cid = box[:4], box[4]
+        box, cid = box[:4], int(box[4])
         cx, cy = (box[0] + box[2]) / 2, (box[1] +box[3]) / 2
-        w, h = (box[2] - box[0]), (box[3] - box[0])
+        w, h = (box[2] - box[0]), (box[3] - box[1])
         cx_idx, cy_idx = int(cx), int(cy)
         offset[cy_idx, cx_idx] = cx - cx_idx, cy - cy_idx
-        mask[cy_idx, cx_idx, cid] = 1
-        get_gaussion_mat(cx_idx, cy_idx, size, size, h, w, hm[..., cid])
-        wh[cy_idx, cx_idx] = 1
+        mask[cy_idx, cx_idx, cid] = True
+        if w < 0 or h < 0:
+            print(w, h)
+        get_gaussion_mat(cx_idx, cy_idx, size[0], size[1], h, w, hm[..., cid])
+        hw[cy_idx, cx_idx] = (h, w)
 
-    return hm, wh, offset, mask
+    return hm, hw, offset, mask
 
 
 def get_gaussion_mat(cx, cy, h, w, bh, bw, hm):
-    r = cal_radius(bh, bw)
+    r = cal_radius(bh, bw, 0.6)
     hm_x1 = max(cx - r, 0)
     hm_y1 = max(cy - r, 0)
     hm_x2 = min(cx + r + 1, w)
@@ -37,7 +39,7 @@ def get_gaussion_mat(cx, cy, h, w, bh, bw, hm):
     gaussion_y1 = max(r - cy, 0)
     gaussion_x2 = np.clip(d - (cx + r + 1) + w, 0, d)
     gaussion_y2 = np.clip(d - (cy + r + 1) + h, 0, d)
-    hm[hm_y1: hm_y2, hm_x1: hm_y2] = gaussion_mat[gaussion_x1: gaussion_x2, gaussion_y1: gaussion_y2]
+    hm[hm_y1: hm_y2, hm_x1: hm_x2] = gaussion_mat[gaussion_y1: gaussion_y2, gaussion_x1: gaussion_x2]
 
 
 def cal_radius(h, w, overlap=0.7):

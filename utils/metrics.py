@@ -17,5 +17,5 @@ class AVGMetrics:
     def __call__(self):
         values = np.array(self.values)
         weights = np.array(self.weights) / sum(self.weights)
-        avg = (values * weights).mean()
+        avg = (values * weights).sum()
         return round(avg, 4)

@@ -1,4 +1,4 @@
-num_epochs = 100
+num_epochs = 400
 batch_size = 32
 lr = 0.001
 model_info = {

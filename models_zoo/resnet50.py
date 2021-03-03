@@ -218,8 +218,14 @@ class resnet50_Head(nn.Module):
                       kernel_size=1, stride=1, padding=0))
 
     def forward(self, x):
-        hm = self.cls_head(x).sigmoid_()
-        wh = self.wh_head(x)
-        offset = self.reg_head(x)
-        return hm, wh, offset
+        hm = self.cls_head(x).sigmoid_().permute(0, 2, 3, 1).contiguous()
+        wh = self.wh_head(x).permute(0, 2, 3, 1).contiguous()
+        offset = self.reg_head(x).permute(0, 2, 3, 1).contiguous()
+
+        item = {
+            "hm": hm,
+            "hw": wh,
+            "offset": offset
+        }
+        return item
 

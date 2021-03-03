@@ -5,6 +5,7 @@ from utils.augmentations import *
 from utils.metrics import AVGMetrics
 from torch.utils.data.dataloader import DataLoader
 from torch.optim.adam import Adam
+from torchvision.transforms.transforms import Compose
 import torch
 from tqdm import tqdm
 from config.mask_config import *
@@ -12,7 +13,9 @@ from config.train_config import *
 
 class Trainer:
     def __init__(self, classes_info, model_info, size):
-        self.det = Detector(classes_info, model_info)
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.det = Detector(classes_info, model_info, self.device)
+        # self.det.load_model("checkpoints/model_0.6161.pth")
         self.has_train_config = False
         self.size = size
 
@@ -20,15 +23,18 @@ class Trainer:
         self._make_optimizer(lr)
         self._make_dataset(image_path, train_path, batch_size, val_path, num_workers)
         self._make_criterion()
+        self.min_loss = float("inf")
         self.has_train_config = True
 
     def _make_dataset(self, image_path, train_path, batch_size, val_path=None, num_workers=6):
         train_trans = [CropResize(self.size), Normalization([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])]
-        train_data = MaskData(image_path, train_path, self.size, train_trans)
+        train_trans = Compose(train_trans)
+        train_data = MaskData(image_path, train_path, (self.size, self.size), train_trans)
         self.train_loader = DataLoader(train_data, batch_size, True, num_workers=num_workers, pin_memory=True)
         if val_path:
             val_trans = [CropResize(self.size), Normalization([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])]
-            val_data = MaskData(image_path, val_path, self.size, val_trans)
+            val_trans = Compose(val_trans)
+            val_data = MaskData(image_path, val_path, (self.size, self.size), val_trans)
             self.val_loader = DataLoader(val_data, batch_size, num_workers=num_workers, pin_memory=True)
         else:
             self.val_loader = None
@@ -43,10 +49,11 @@ class Trainer:
         assert self.has_train_config, "还没配置好训练参数"
         avg_loss = AVGMetrics("train_loss")
         self.det.set_status("train")
-        with tqdm(self.train_loader) as pbar:
+        with tqdm(self.train_loader, desc="train") as pbar:
             for data in pbar:
                 self.op.zero_grad()
-                images = data["images"]
+                data = {k: v.to(self.device) for k, v in data.items()}
+                images = data["image"]
                 pred = self.det.inference(images)
                 loss, scalar = self.criterion(pred, data)
                 avg_loss.update(loss.item(), len(images))
@@ -60,19 +67,25 @@ class Trainer:
         avg_loss = AVGMetrics("val_loss")
         self.det.set_status("eval")
         with torch.no_grad():
-            with tqdm(self.train_loader) as pbar:
+            with tqdm(self.train_loader, desc="eval") as pbar:
                 for data in pbar:
-                    images = data["images"]
+                    data = {k: v.to(self.device) for k, v in data.items()}
+                    images = data["image"]
                     pred = self.det.inference(images)
                     loss, scalar = self.criterion(pred, data)
                     avg_loss.update(loss.item(), len(images))
                     pbar.set_postfix(**scalar)
+        if self.min_loss > avg_loss():
+            self.min_loss = avg_loss()
+            self.det.save_model(f"checkpoints/model_{self.min_loss}.pth")
+            print(f"update min_loss to {self.min_loss}")
         return str(avg_loss)
 
 
 def run():
     trainer = Trainer(classes_info, model_info, size)
     trainer.make_train_config(images_path, train_path, val_path, lr, batch_size, num_workers)
+    eval_log = trainer.eval_one_epoch()
     for epoch in range(num_epochs):
         train_log = trainer.fit_one_epoch()
         eval_log = trainer.eval_one_epoch()
