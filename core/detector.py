@@ -1,5 +1,6 @@
 from core.centernet import CenterNet_Resnet50
 from torch.nn.functional import max_pool2d
+from utils.common import single_class_nms
 import torch
 import cv2
 import numpy as np
@@ -25,7 +26,7 @@ class Detector:
         pred = self.model(images)
         return pred
 
-    def predict(self, image, trans, size, thres=0.8):
+    def predict(self, image, size, thres=0.8, is_nms=True):
         oh, ow = image.shape[:2]
         image = image.astype(np.float32) / 255.
         image[:, :] -= (0.5, 0.5, 0.5)
@@ -36,9 +37,8 @@ class Detector:
         with torch.no_grad():
             pred = self.inference(image)
         hm, hw, offset = pred["hm"], pred["hw"], pred["offset"]
-        cv2.imshow("t", hm[0, :, :, 0].cpu().numpy())
-        cv2.waitKey()
-        pool_hm = max_pool2d(hm, (3, 3), 1, 1)
+        cv2.imshow("t", cv2.resize(hm[0, :, :, 0].cpu().numpy(), None, fx=4, fy=4))
+        pool_hm = max_pool2d(hm, (15, 15), 1, 7)
         points_mask = pool_hm == hm
         maty, matx = torch.meshgrid(torch.arange(0, size//4), torch.arange(0, size//4))
         maty = maty.to(self.device)
@@ -48,19 +48,20 @@ class Detector:
         for batch in range(len(image)):
             item = {}
             for cid in range(self.num_classes):
-                conf = hm[batch, :, :, cid][points_mask[batch, :, :, cid]]
-                tmp_hw = hw[batch][points_mask[batch, :, :, cid]]
-                tmp_offset = offset[batch][points_mask[batch, :, :, cid]]
-                tmp_maty = maty[points_mask[batch, :, :, cid]]
-                tmp_matx = matx[points_mask[batch, :, :, cid]]
-                obj_mask = conf > thres
-                xy = tmp_offset[:, (1, 0)] + torch.stack([tmp_matx, tmp_maty], dim=-1)
-                boxes = torch.cat([xy, tmp_hw], -1)
-                boxes = boxes[obj_mask].cpu().numpy()[:, (0, 1, 3, 2)] * 4
+                obj_mask = torch.logical_and(hm[batch, :, :, cid] > thres[cid], points_mask[batch, :, :, cid])
+                tmp_hw = hw[batch][obj_mask]
+                tmp_offset = offset[batch][obj_mask]
+                tmp_maty = maty[obj_mask]
+                tmp_matx = matx[obj_mask]
+                yx = tmp_offset + torch.stack([tmp_maty, tmp_matx], dim=-1)
+                boxes = torch.cat([yx, tmp_hw], -1)
+                boxes = boxes.cpu().numpy()[:, (1, 0, 3, 2)] * 4
                 boxes = np.concatenate([boxes[:, :2] - boxes[:, 2:] / 2, boxes[:, :2] + boxes[:, 2:] / 2], -1)
-                # boxes = boxes / 512 * size
                 boxes[:, (0, 2)] = boxes[:, (0, 2)] * ow / size
                 boxes[:, (1, 3)] = boxes[:, (1, 3)] * oh /size
+                boxes = np.concatenate([boxes, (hm[batch, :, :, cid][obj_mask]).cpu().numpy()[:, None]], -1)
+                if is_nms:
+                    boxes = single_class_nms(boxes, 0.1)
                 item[cid] = boxes
             result.append(item)
         return result

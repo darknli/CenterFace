@@ -1,5 +1,5 @@
 from core.detector import Detector
-from core.loss import BaseLoss
+from core.loss import *
 from utils.mask_data import MaskData
 from utils.augmentations import *
 from utils.metrics import AVGMetrics
@@ -10,6 +10,9 @@ import torch
 from tqdm import tqdm
 from config.mask_config import *
 from config.train_config import *
+from time import time
+from os import path, makedirs
+from datetime import datetime
 
 class Trainer:
     def __init__(self, classes_info, model_info, size):
@@ -40,7 +43,7 @@ class Trainer:
             self.val_loader = None
 
     def _make_criterion(self):
-        self.criterion = BaseLoss()
+        self.criterion = FocalLoss()
 
     def _make_optimizer(self, lr):
         self.op = Adam(self.det.get_param(), lr=lr, weight_decay=5e-4)
@@ -62,7 +65,7 @@ class Trainer:
                 pbar.set_postfix(**scalar)
         return str(avg_loss)
 
-    def eval_one_epoch(self):
+    def eval_one_epoch(self, save_dir, prefix=""):
         assert self.val_loader, "验证集没有构建"
         avg_loss = AVGMetrics("val_loss")
         self.det.set_status("eval")
@@ -77,18 +80,23 @@ class Trainer:
                     pbar.set_postfix(**scalar)
         if self.min_loss > avg_loss():
             self.min_loss = avg_loss()
-            self.det.save_model(f"checkpoints/model_{self.min_loss}.pth")
-            print(f"update min_loss to {self.min_loss}")
+            self.det.save_model(f"{save_dir}/{prefix}_{self.min_loss}.pth")
+            print(f"min_loss update to {self.min_loss}")
         return str(avg_loss)
 
 
 def run():
+    today = str(datetime.fromtimestamp(time())).replace(":", ".")[:-7]
+    workspace = path.join("checkpoints", today)
+    if not path.exists(workspace):
+        makedirs(workspace)
+
     trainer = Trainer(classes_info, model_info, size)
     trainer.make_train_config(images_path, train_path, val_path, lr, batch_size, num_workers)
-    eval_log = trainer.eval_one_epoch()
+
     for epoch in range(num_epochs):
         train_log = trainer.fit_one_epoch()
-        eval_log = trainer.eval_one_epoch()
+        eval_log = trainer.eval_one_epoch(workspace,f"epoch={epoch}")
         print(f"epoch={epoch}")
         print(train_log)
         print(eval_log)

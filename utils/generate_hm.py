@@ -8,7 +8,7 @@ def boxes2hm(boxes, size, num_classes):
     mask = np.zeros((size[0], size[1], num_classes), dtype=bool)
 
     for box in boxes:
-        box, cid = box[:4], int(box[4])
+        box, cid = box[:4], int(box[-1])
         cx, cy = (box[0] + box[2]) / 2, (box[1] +box[3]) / 2
         w, h = (box[2] - box[0]), (box[3] - box[1])
         cx_idx, cy_idx = int(cx), int(cy)
